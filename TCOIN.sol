@@ -9,9 +9,10 @@ contract TCOIN is ERC20, Ownable {
     string private tokenName = "TorontoCoin";
     string private tokenSymbol = "TCOIN";
     uint256 private _decimals = 18;
-    uint256 private totalRawSupply;
-    uint256 private totalHistorySupply; // Track total minted supply to find out reserve ratio
-    uint256 private reserveRatio; // Allows to track reserve ratio
+    uint256 private totalTCOINSupply; // TCoin supply including demurrage rate
+    uint256 private totalMintedSupply; // Track total minted 
+    uint256 private totalBurned; // Track total burned 
+    uint256 private totalRawSupply; // Tracks how much tokens should exist without demurrage rate
     uint256 private lastRebaseTime;
     uint256 private REBASE_PERIOD = 86400; // 1 day in seconds
     uint256 private DEMURRAGE_RATE = 99967; // (1 - 0.0333% daily reduction) * 100000
@@ -48,26 +49,11 @@ contract TCOIN is ERC20, Ownable {
     function rebase() public {
         require(block.timestamp >= lastRebaseTime + REBASE_PERIOD, "Rebase: Too early to rebase");
 
-        uint256 newTotalSupply = totalSupply() * DEMURRAGE_RATE / 100000;
-        uint256 burnAmount = totalSupply() - newTotalSupply;
-        totalRawSupply = newTotalSupply;
-        rebaseBalances(DEMURRAGE_RATE);
-        _burn(address(this), burnAmount); // Adjust total supply by burning
+        uint256 newTotalSupply = totalTCOINSupply * DEMURRAGE_RATE / 100000;
+        totalTCOINSupply = newTotalSupply;
 
         emit Rebase(newTotalSupply);
         lastRebaseTime = block.timestamp;
-    }
-
-    function rebaseBalances(uint256 rate) internal {
-        uint256 length = allTokenHolders.length;
-        for (uint256 i = 0; i < length; i++) {
-            address account = allTokenHolders[i];
-            uint256 oldBalance = ERC20.balanceOf(account); // Use ERC20.balanceOf to avoid infinite recursion
-            uint256 newBalance = oldBalance * rate / 100000;
-            if (oldBalance > newBalance) {
-                _transfer(account, address(this), oldBalance - newBalance); // Transfer difference to smart contract balance
-            }
-        }
     }
 
     function _updateTokenHolderList(address account) internal {
@@ -96,9 +82,8 @@ contract TCOIN is ERC20, Ownable {
     }
 
     function transfer(address recipient, uint256 amount) public override returns (bool) {
-        uint256 adjustedAmount = amount * reserveRatio; // Allows us to adjust how much money client will get for 1 TCOIN
-        _mint(address(this), adjustedAmount); // Mint new tokens to the smart contract address
-        _transfer(address(this), recipient, adjustedAmount); // Transfer tokens from the smart contract to the recipient
+        _mint(address(this), amount); // Mint new tokens to the smart contract address
+        _transfer(address(this), recipient, amount); // Transfer tokens from the smart contract to the recipient
         _updateTokenHolderList(msg.sender); // Update token holder list
         _updateTokenHolderList(recipient);
 
@@ -107,26 +92,26 @@ contract TCOIN is ERC20, Ownable {
 
     function mint(address to, uint256 amount) public onlyWhitelistedStore {
         _mint(to, amount);
-        totalRawSupply += amount;
-        totalHistorySupply += amount; // Update the total minted supply
+        totalTCOINSupply += amount;
+        totalMintedSupply += amount; // Update the total minted supply
         _updateTokenHolderList(to);
         emit Minted(to, amount); // Emit event for minting
 
-        // Update reserveRatio
-        if (totalHistorySupply > 0) {
-            reserveRatio = totalRawSupply / totalHistorySupply; 
+        // Update Total Supply
+        if (totalMintedSupply > 0) {
+            totalRawSupply = totalMintedSupply - totalBurned; 
         }
     }
 
     function burn(address from, uint256 amount) public onlyWhitelistedStore {
         _burn(from, amount);
-        totalRawSupply -= amount;
-        totalHistorySupply -= amount; // Update the total minted supply to reflect burning tokens
+        totalTCOINSupply -= amount;
+        totalBurned += amount; // Update the total burned supply to reflect burning tokens
         _updateTokenHolderList(from);
 
-        // Update reserveRatio
-        if (totalHistorySupply > 0) {
-            reserveRatio = totalRawSupply / totalHistorySupply; 
+        // Update Total Supply
+        if (totalBurned > 0) {
+            totalRawSupply = totalMintedSupply - totalBurned; 
         }
     }
 
@@ -161,20 +146,20 @@ contract TCOIN is ERC20, Ownable {
 
     // Modified ERC20 functions
     function totalSupply() public view override returns (uint256) {
-        return totalRawSupply;
+        return totalTCOINSupply;
     }
 
     function balanceOf(address account) public view override returns (uint256) {
         return ERC20.balanceOf(account);
     }
 
-    // Get ReserveRatio
-    function getReservationRatio() external view returns (uint256) {
-        return reserveRatio;
+    // Get totalRawSupply
+    function getTotalRawSupply() external view returns (uint256) {
+        return totalRawSupply;
     }
 
-    // Get totalHistorySupply
-    function getTotalHistorySupply() external view returns (uint256) {
-        return totalHistorySupply;
+    // Get totalTCOINSupply
+    function getTotalTCOINSupply() external view returns (uint256) {
+        return totalTCOINSupply;
     }
 }
