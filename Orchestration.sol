@@ -8,10 +8,12 @@ import "./TTCCOIN.sol";
 contract Orchestrator is Ownable {
     TCOIN private tcoin;
     TTC private ttc;
+    address private charityAddress; // Address to send the excess amount
 
-    constructor(address _tcoinAddress, address _ttcAddress) Ownable(msg.sender) {
+    constructor(address _tcoinAddress, address _ttcAddress, address _charityAddress) Ownable(msg.sender) {
         tcoin = TCOIN(_tcoinAddress);
         ttc = TTC(_ttcAddress);
+        charityAddress = _charityAddress;
     }
 
     // Function to calculate the reserve ratio
@@ -46,11 +48,25 @@ contract Orchestrator is Ownable {
         uint256 reserveRatio = calculateReserveRatio();
         uint256 ttcAmount = (tcoinAmount * reserveRatio) / 10000;
 
+        // If reserve ratio is less than 0.8, give user 5% less TTC tokens
+        if (reserveRatio < 800000) {
+            ttcAmount = ttcAmount * 95 / 100;
+        }
+
+        // If reserve ratio is greater than 1.2, send amount over 1.2 to charity
+        if (reserveRatio > 1200000) {
+            uint256 excessAmount = (tcoinAmount * (reserveRatio - 1200000)) / 10000;
+            ttc.mint(charityAddress, excessAmount);
+            ttcAmount = (tcoinAmount * 1200000) / 10000;
+        }
+
         // Burn the TCOIN directly from the user's balance
         tcoin.burn(msg.sender, tcoinAmount);
+
         // Mint TTC to the contract
         ttc.mint(address(this), ttcAmount);
-        // Transfer TTC COIN to the user
+
+        // Transfer TTC to the user
         ttc.transfer(msg.sender, ttcAmount);
     }
 }
