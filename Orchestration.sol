@@ -8,7 +8,7 @@ import "./TTCCOIN.sol";
 contract Orchestrator is Ownable {
     TCOIN private tcoin;
     TTC private ttc;
-    address private charityAddress; // Address to send the excess amount over 1.2 reserve ratio
+    address private charityAddress; // Address to send the excess amount over 1.2 reserve ratio and default charity address
     address private reserveTokensAddress; // Address to send tokens after user redeem their TCOIN's
     uint256 public pegValue = 330; // Representing $3.3 with 2 decimal places
     uint256 public stewardCount = 0; // Total number of stewards
@@ -20,6 +20,7 @@ contract Orchestrator is Ownable {
     mapping(uint256 => Steward) public stewards; // Mapping for stewards
     mapping(uint256 => uint256) public pegValueVoteCounts; // Tracks the number of votes for each proposed value
     mapping(address => bool) public hasVoted; // Tracks whether a steward has voted
+    mapping(address => uint256) public stewardVotes; // Tracks the current vote of each steward
     uint256[] public proposedPegValues; // List of proposed peg values
 
     constructor(address _tcoinAddress, address _ttcAddress, address _charityAddress, address _reserveTokensAddress) Ownable(msg.sender) {
@@ -27,6 +28,7 @@ contract Orchestrator is Ownable {
         ttc = TTC(_ttcAddress);
         charityAddress = _charityAddress;
         reserveTokensAddress = _reserveTokensAddress;
+        charityAddresses[0] = _charityAddress; // Set the default charity address as the 0th value in the mapping
     }
 
     // Struct to represent a steward
@@ -59,20 +61,39 @@ contract Orchestrator is Ownable {
     function voteToUpdatePegValue(uint256 proposedPegValue) external {
         address steward = msg.sender;
         require(isSteward(steward), "Only stewards can vote");
-        require(!hasVoted[steward], "Steward has already voted");
 
-        hasVoted[steward] = true;
-
-        if (pegValueVoteCounts[proposedPegValue] == 0) {
-            proposedPegValues.push(proposedPegValue); // Track new proposed value
+        // Check if the steward has voted before and decrease the vote count for the previous value
+        if (hasVoted[steward]) {
+            uint256 previousVote = stewardVotes[steward];
+            pegValueVoteCounts[previousVote]--;
+        } else {
+            hasVoted[steward] = true;
         }
-        
+
+        // Update the steward's vote
+        stewardVotes[steward] = proposedPegValue;
         pegValueVoteCounts[proposedPegValue]++;
 
-        // If a majority is reached for a specific proposed value, update the peg value
-        if (pegValueVoteCounts[proposedPegValue] > stewardCount / 2) {
-            pegValue = proposedPegValue;
-            resetVotes();
+        // Check if the proposed value has the highest vote count
+        uint256 highestVoteCount = 0;
+        uint256 leadingPegValue = pegValue;
+
+        for (uint256 i = 0; i < proposedPegValues.length; i++) {
+            uint256 currentPegValue = proposedPegValues[i];
+            uint256 currentVoteCount = pegValueVoteCounts[currentPegValue];
+
+            if (currentVoteCount > highestVoteCount) {
+                highestVoteCount = currentVoteCount;
+                leadingPegValue = currentPegValue;
+            } else if (currentVoteCount == highestVoteCount && currentPegValue != leadingPegValue) {
+                // If there is a tie, do not update the peg value
+                leadingPegValue = pegValue;
+            }
+        }
+
+        // Update the peg value if there is a clear leader
+        if (leadingPegValue != pegValue) {
+            pegValue = leadingPegValue;
         }
     }
 
@@ -84,20 +105,6 @@ contract Orchestrator is Ownable {
             }
         }
         return false;
-    }
-
-    // Function to reset the votes
-    function resetVotes() internal {
-        for (uint256 i = 0; i < stewardCount; i++) {
-            address stewardAddress = stewards[i].stewardAddress;
-            hasVoted[stewardAddress] = false;
-        }
-
-        for (uint256 i = 0; i < proposedPegValues.length; i++) {
-            pegValueVoteCounts[proposedPegValues[i]] = 0;
-        }
-
-        delete proposedPegValues;
     }
 
     // Function to calculate the reserve ratio
@@ -214,7 +221,6 @@ contract Orchestrator is Ownable {
 
         // Mint TCOIN to the charity
         tcoin.mint(charity, tcoinAmount);
-
         // Reduce total mintable amount for the charity
         charityTotalMintable[charity] -= tcoinAmount;
     }
