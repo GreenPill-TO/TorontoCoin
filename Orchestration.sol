@@ -4,10 +4,12 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./TCOIN.sol";
 import "./TTCCOIN.sol";
+import "./CADCOIN.sol";
 
 contract Orchestrator is Ownable {
     TCOIN private tcoin;
     TTC private ttc;
+    CAD private cad;
     address private charityAddress; // Address to send the excess amount over 1.2 reserve ratio and default charity address
     address private reserveTokensAddress; // Address to send tokens after user redeem their TCOIN's
     uint256 public pegValue = 330; // Representing $3.3 with 2 decimal places
@@ -23,13 +25,26 @@ contract Orchestrator is Ownable {
     mapping(address => uint256) public stewardVotes; // Tracks the current vote of each steward
     uint256[] public proposedPegValues; // List of proposed peg values
 
-    constructor(address _tcoinAddress, address _ttcAddress, address _charityAddress, address _reserveTokensAddress) Ownable(msg.sender) {
+    constructor(address _tcoinAddress, address _ttcAddress, address _cadAddress, address _charityAddress, address _reserveTokensAddress) Ownable(msg.sender) {
         tcoin = TCOIN(_tcoinAddress);
         ttc = TTC(_ttcAddress);
+        cad = CAD(_cadAddress);
         charityAddress = _charityAddress;
         reserveTokensAddress = _reserveTokensAddress;
         charityAddresses[0] = _charityAddress; // Set the default charity address as the 0th value in the mapping
     }
+
+    function setTcoinAddress(address _tcoinAddress) external onlyOwner {
+        tcoin = TCOIN(_tcoinAddress);
+    }
+
+    function setTtcAddress(address _ttcAddress) external onlyOwner {
+        ttc = TTC(_ttcAddress);
+    }
+
+    function setCadAddress(address _cadAddress) external onlyOwner {
+        cad = CAD(_cadAddress);
+    }   
 
     // Struct to represent a steward
     struct Steward {
@@ -133,19 +148,19 @@ contract Orchestrator is Ownable {
     }
 
     // Redeem function where user doesn't select charity and charity with index 0 is used by default
-    function redeemTCOINForUser(uint256 tcoinAmount) public {
-        redeemTCOINForUser(tcoinAmount, 0);
+    function redeemTCOINForUserTTCCOIN(uint256 tcoinAmount) public {
+        redeemTCOINForUserTTCCOIN(tcoinAmount, 0);
     }
 
     // Function to redeem TCOIN for TTC based on reserve ratio
-    function redeemTCOINForUser(uint256 tcoinAmount, uint256 charityId) public {
+    function redeemTCOINForUserTTCCOIN(uint256 tcoinAmount, uint256 charityId) public {
         require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
         require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
 
         uint256 reserveRatio = calculateReserveRatio();
         uint256 ttcAmount = (tcoinAmount * reserveRatio) / 10000;
 
-        // Give the user 95% value of TCOIN in TTC coin, overhead will allow charities to redeem at 100% value 
+        // Give the user 95% value of TCOIN in TTC coin
         ttcAmount = ttcAmount * 95 / 100;
 
         // If reserve ratio is less than 0.8, give user 5% less TTC tokens
@@ -158,7 +173,7 @@ contract Orchestrator is Ownable {
         if (reserveRatio > 1200000) {
             excessAmount = (tcoinAmount * (reserveRatio - 1200000)) / 10000;
             ttc.mint(charityAddress, excessAmount);
-            ttcAmount = (tcoinAmount * 1200000) / 10000;
+            ttcAmount = (ttcAmount * 1200000) / 10000;
         }
 
         // Burn the 5% overhead of TCOIN
@@ -176,19 +191,19 @@ contract Orchestrator is Ownable {
     }
 
     // Redeem function where store doesn't select charity and charity with index 0 is used by default
-    function redeemTCOINForStore(uint256 tcoinAmount) public {
-        redeemTCOINForStore(tcoinAmount, 0);
+    function redeemTCOINForStoreTTCCOIN(uint256 tcoinAmount) public {
+        redeemTCOINForStoreTTCCOIN(tcoinAmount, 0);
     }
 
     // Function to redeem TCOIN for TTC based on reserve ratio
-    function redeemTCOINForStore(uint256 tcoinAmount, uint256 charityId) public {
+    function redeemTCOINForStoreTTCCOIN(uint256 tcoinAmount, uint256 charityId) public {
         require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
         require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
 
         uint256 reserveRatio = calculateReserveRatio();
         uint256 ttcAmount = (tcoinAmount * reserveRatio) / 10000;
 
-        // Give the user 95% value of TCOIN in TTC coin, overhead will allow charities to redeem at 100% value 
+        // Give the user 95% value of TCOIN in TTC coin
         ttcAmount = ttcAmount * 95 / 100;
 
         // If reserve ratio is less than 0.8, give user 5% less TTC tokens
@@ -201,7 +216,7 @@ contract Orchestrator is Ownable {
         if (reserveRatio > 1200000) {
             excessAmount = (tcoinAmount * (reserveRatio - 1200000)) / 10000;
             ttc.mint(charityAddress, excessAmount);
-            ttcAmount = (tcoinAmount * 1200000) / 10000;
+            ttcAmount = (ttcAmount * 1200000) / 10000;
         }
 
         // Burn the TCOIN directly from the user's balance
@@ -210,6 +225,88 @@ contract Orchestrator is Ownable {
         ttc.mint(address(this), ttcAmount);
         // Transfer TTC to the user
         ttc.transfer(msg.sender, ttcAmount);
+        // Update total mintable for the chosen charity by the TCOIN amount excluding excess amount
+        charityTotalMintable[charityAddresses[charityId]] += (tcoinAmount - excessAmount);
+    }
+
+     // Redeem function where user doesn't select charity and charity with index 0 is used by default
+    function redeemTCOINForUserCADCOIN(uint256 tcoinAmount) public {
+        redeemTCOINForUserCADCOIN(tcoinAmount, 0);
+    }
+
+    // Function to redeem TCOIN for CAD based on reserve ratio
+    function redeemTCOINForUserCADCOIN(uint256 tcoinAmount, uint256 charityId) public {
+        require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
+        require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
+
+        uint256 reserveRatio = calculateReserveRatio();
+        uint256 cadAmount = (tcoinAmount * reserveRatio * pegValue) / 1000000;
+
+        // Give the user 90% value of TCOIN in CAD coin
+        cadAmount = cadAmount * 90 / 100;
+
+        // If reserve ratio is less than 0.8, give user 5% less CAD tokens
+        if (reserveRatio < 800000) {
+            cadAmount = cadAmount * 95 / 100;
+        }
+
+        uint256 excessAmount = 0;
+        // If reserve ratio is greater than 1.2, send amount over 1.2 to charity
+        if (reserveRatio > 1200000) {
+            excessAmount = (tcoinAmount * (reserveRatio - 1200000)) / 10000;
+            ttc.mint(charityAddress, excessAmount);
+            cadAmount = (cadAmount * 1200000) / 10000;
+        }
+
+        // Burn the 5% overhead of TCOIN
+        uint256 burnAmount = (tcoinAmount * 5) / 100;
+        tcoin.burn(msg.sender, burnAmount);
+        // Send 95% of TCOIN value to reserve
+        uint256 reserveAmount = (tcoinAmount * 95) / 100;
+        tcoin.transfer(reserveTokensAddress, reserveAmount);
+        // Mint CAD to the contract
+        cad.mint(address(this), cadAmount);
+        // Transfer CAD to the user
+        cad.transfer(msg.sender, cadAmount);
+        // Update total mintable for the chosen charity by the TCOIN amount excluding excess amount
+        charityTotalMintable[charityAddresses[charityId]] += (tcoinAmount - excessAmount);
+    }
+
+    // Redeem function where store doesn't select charity and charity with index 0 is used by default
+    function redeemTCOINForStoreCADCOIN(uint256 tcoinAmount) public {
+        redeemTCOINForStoreCADCOIN(tcoinAmount, 0);
+    }
+
+    // Function to redeem TCOIN for CAD based on reserve ratio
+    function redeemTCOINForStoreCADCOIN(uint256 tcoinAmount, uint256 charityId) public {
+        require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
+        require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
+
+        uint256 reserveRatio = calculateReserveRatio();
+        uint256 cadAmount = (tcoinAmount * reserveRatio * pegValue) / 1000000;
+
+        // Give the user 90% value of TCOIN in CAD coin
+        cadAmount = cadAmount * 90 / 100;
+
+        // If reserve ratio is less than 0.8, give user 5% less CAD tokens
+        if (reserveRatio < 800000) {
+            cadAmount = cadAmount * 95 / 100;
+        }
+
+        uint256 excessAmount = 0;
+        // If reserve ratio is greater than 1.2, send amount over 1.2 to charity
+        if (reserveRatio > 1200000) {
+            excessAmount = (tcoinAmount * (reserveRatio - 1200000)) / 10000;
+            cad.mint(charityAddress, excessAmount);
+            cadAmount = (cadAmount * 1200000) / 10000;
+        }
+
+        // Burn the TCOIN directly from the user's balance
+        tcoin.burn(msg.sender, tcoinAmount);
+        // Mint CAD to the contract
+        ttc.mint(address(this), cadAmount);
+        // Transfer CAD to the user
+        ttc.transfer(msg.sender, cadAmount);
         // Update total mintable for the chosen charity by the TCOIN amount excluding excess amount
         charityTotalMintable[charityAddresses[charityId]] += (tcoinAmount - excessAmount);
     }
