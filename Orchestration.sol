@@ -181,6 +181,82 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         redeemTCOINForUserTTCCOIN(tcoinAmount, 0);
     }
 
+    // Function to redeem TCOIN for TTC to get 100% value
+    function redeemTCOINTTCCOIN(uint256 tcoinAmount, uint256 charityId) public {
+        require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
+        require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
+
+        reserveRatio = calculateReserveRatio();
+        uint256 ttcAmount = (tcoinAmount * reserveRatio) / 10000;
+
+        // Give the user 100% value of TCOIN in TTC coin
+        ttcAmount = ttcAmount;
+
+        // If reserve ratio is less than 0.8, give user 5% less TTC tokens
+        if (reserveRatio < minimumReserveRatio) {
+            ttcAmount = ttcAmount * 95 / 100;
+        }
+
+        uint256 excessAmount = 0;
+        // If reserve ratio is greater than 1.2, send amount over 1.2 to charity
+        if (reserveRatio > maximumReserveRatio) {
+            excessAmount = (tcoinAmount * (reserveRatio - maximumReserveRatio)) / 10000;
+            ttc.mint(charityAddress, excessAmount);
+            ttcAmount = (tcoinAmount * maximumReserveRatio) / 10000;
+        }
+
+        // Burn the 5% overhead of TCOIN
+        uint256 burnAmount = (tcoinAmount * 5) / 100;
+        tcoin.burn(msg.sender, burnAmount);
+        // Send 95% of TCOIN value to reserve
+        uint256 reserveAmount = (tcoinAmount * 95) / 100;
+        tcoin.transfer(reserveTokensAddress, reserveAmount);
+        // Mint TTC to the contract
+        ttc.mint(address(this), ttcAmount);
+        // Transfer TTC to the user
+        ttc.transfer(msg.sender, ttcAmount);
+        // Update total mintable for the chosen charity by the TCOIN amount excluding excess amount
+        charityTotalMintable[charityAddresses[charityId]] += (tcoinAmount - excessAmount);
+    }
+
+    // Function to redeem TCOIN for CAD to get 100% value
+    function redeemTCOINFCADCOIN(uint256 tcoinAmount, uint256 charityId) public {
+        require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
+        require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
+
+        reserveRatio = calculateReserveRatio();
+        uint256 cadAmount = (tcoinAmount * reserveRatio * pegValue) / 1000000;
+
+        // Give the user 100% value of TCOIN in CAD coin
+        cadAmount = cadAmount;
+
+        // If reserve ratio is less than 0.8, give user 5% less CAD tokens
+        if (reserveRatio < minimumReserveRatio) {
+            cadAmount = cadAmount * 95 / 100;
+        }
+
+        uint256 excessAmount = 0;
+        // If reserve ratio is greater than 1.2, send amount over 1.2 to charity
+        if (reserveRatio > maximumReserveRatio) {
+            excessAmount = (cadAmount * (reserveRatio - maximumReserveRatio)) / 10000;
+            cad.mint(charityAddress, excessAmount);
+            cadAmount = (tcoinAmount * pegValue * maximumReserveRatio) / 10000;
+        }
+
+        // Burn the 5% overhead of TCOIN
+        uint256 burnAmount = (tcoinAmount * 5) / 100;
+        tcoin.burn(msg.sender, burnAmount);
+        // Send 95% of TCOIN value to reserve
+        uint256 reserveAmount = (tcoinAmount * 95) / 100;
+        tcoin.transfer(reserveTokensAddress, reserveAmount);
+        // Mint CAD to the contract
+        cad.mint(address(this), cadAmount);
+        // Transfer CAD to the user
+        cad.transfer(msg.sender, cadAmount);
+        // Update total mintable for the chosen charity by the TCOIN amount excluding excess amount
+        charityTotalMintable[charityAddresses[charityId]] += (tcoinAmount - excessAmount);
+    }
+
     // Function to redeem TCOIN for TTC based on reserve ratio
     function redeemTCOINForUserTTCCOIN(uint256 tcoinAmount, uint256 charityId) public {
         require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
@@ -229,7 +305,7 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
         require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
 
-        uint256 reserveRatio = calculateReserveRatio();
+        reserveRatio = calculateReserveRatio();
         uint256 ttcAmount = (tcoinAmount * reserveRatio) / 10000;
 
         // Give the user 95% value of TCOIN in TTC coin
@@ -268,7 +344,7 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
         require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
 
-        uint256 reserveRatio = calculateReserveRatio();
+        reserveRatio = calculateReserveRatio();
         uint256 cadAmount = (tcoinAmount * reserveRatio * pegValue) / 1000000;
 
         // Give the user 90% value of TCOIN in CAD coin
@@ -311,7 +387,7 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(tcoin.balanceOf(msg.sender) >= tcoinAmount, "Insufficient TCOIN balance");
         require(charityAddresses[charityId] != address(0), "This charity doesn't exist");
 
-        uint256 reserveRatio = calculateReserveRatio();
+        reserveRatio = calculateReserveRatio();
         uint256 cadAmount = (tcoinAmount * reserveRatio * pegValue) / 1000000;
 
         // Give the user 90% value of TCOIN in CAD coin
