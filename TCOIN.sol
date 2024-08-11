@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract TCOIN is ERC20, Ownable {
+contract TCOIN is Initializable, ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
     // State variables
     string private tokenName = "TorontoCoin";
     string private tokenSymbol = "TCOIN";
@@ -41,9 +43,22 @@ contract TCOIN is ERC20, Ownable {
     event RebasePeriodUpdated(uint256 newRebasePeriod);
     event Minted(address to, uint256 amount); // Event for minting
 
-    constructor() ERC20("TorontoCoin", "TCOIN") Ownable(msg.sender) {
+     // Initializer
+    function initialize() public initializer {
+        __ERC20_init("TorontoCoin", "TCOIN");
+        __Ownable_init(msg.sender);
+        __UUPSUpgradeable_init();
+        
+        tokenName = "TorontoCoin";
+        tokenSymbol = "TCOIN";
+        _decimals = 18;
+        REBASE_PERIOD = 86400; // 1 day in seconds
+        DEMURRAGE_RATE = 99967; // (1 - 0.0333% daily reduction) * 100000
+
         lastRebaseTime = block.timestamp;
     }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     // Rebase function
     function rebase() public {
@@ -57,7 +72,7 @@ contract TCOIN is ERC20, Ownable {
     }
 
     function _updateTokenHolderList(address account) internal {
-        if (ERC20.balanceOf(account) == 0) { // Use ERC20.balanceOf to avoid infinite recursion
+        if (balanceOf(account) == 0) { // Use ERC20.balanceOf to avoid infinite recursion
             // Remove account from allTokenHolders if balance is zero
             for (uint256 i = 0; i < allTokenHolders.length; i++) {
                 if (allTokenHolders[i] == account) {
@@ -150,7 +165,7 @@ contract TCOIN is ERC20, Ownable {
     }
 
     function balanceOf(address account) public view override returns (uint256) {
-        return ERC20.balanceOf(account);
+        return balanceOf(account);
     }
 
     // Get totalRawSupply
@@ -161,5 +176,15 @@ contract TCOIN is ERC20, Ownable {
     // Get totalTCOINSupply
     function getTotalTCOINSupply() external view returns (uint256) {
         return totalTCOINSupply;
+    }
+
+    // Get Demurrage Rate
+    function getDemurrageRate() external view returns (uint256) {
+        return DEMURRAGE_RATE;
+    }
+
+    // Get Rebase Period
+    function getRebasePeriod() external view returns (uint256) {
+        return REBASE_PERIOD;
     }
 }
