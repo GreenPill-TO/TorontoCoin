@@ -7,46 +7,32 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "./TCOIN.sol";
 import "./TTCCOIN.sol";
 import "./CADCOIN.sol";
+import "./Voting.sol";
 
 contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     TCOIN private tcoin;
     TTC private ttc;
     CAD private cad;
+    Voting public voting;
     address private charityAddress; // Address to send the excess amount over 1.2 reserve ratio and default charity address
     address private reserveTokensAddress; // Address to send tokens after user redeem their TCOIN's
-    uint256 public pegValue = 330; // Representing $3.3 with 2 decimal places
-    uint256 public stewardCount = 0; // Total number of stewards
-    uint256 redemptionRateUserTTC = 95;
-    uint256 redemptionRateStoreTTC = 95;
-    uint256 redemptionRateUserCAD = 90;
-    uint256 redemptionRateStoreCAD = 90;
-    uint256 minimumReserveRatio = 800000;
-    uint256 maximumReserveRatio = 1200000;
-    uint256 demurrageRate = tcoin.getDemurrageRate();
-    uint256 reserveRatio = calculateReserveRatio();
-
-    // Enum for voting options
-    enum VoteOption { Leave, Increment, Decrement }
-    
-    // Struct for holding votes
-    struct Vote {
-        uint256 incrementVotes;
-        uint256 decrementVotes;
-        uint256 leaveVotes;
-        uint256 totalVotes;
-    }
+    uint256 public pegValue = voting.getPegValue(); // Representing $3.3 with 2 decimal places
+    uint256 public stewardCount; // Total number of stewards
+    uint256 public redemptionRateUserTTC = voting.getRedemptionRateUserTTC();
+    uint256 public redemptionRateStoreTTC = voting.getRedemptionRateStoreTTC();
+    uint256 public redemptionRateUserCAD = voting.getRedemptionRateUserCAD();
+    uint256 public redemptionRateStoreCAD = voting.getRedemptionRateStoreCAD();
+    uint256 public minimumReserveRatio = voting.getMinimumReserveRatio();
+    uint256 public maximumReserveRatio = voting.getMaximumReserveRatio();
+    uint256 public demurrageRate = voting.getDemurrageRate();
+    uint256 public reserveRatio = voting.getReserveRatio();
 
     // Mappings for charity names and addresses
     mapping(uint256 => string) public charityNames;
     mapping(uint256 => address) public charityAddresses;
+    mapping(address => bool) public isCharityAddress;
     mapping(address => uint256) public charityTotalMintable; // Tracks the total mintable for each charity
     mapping(uint256 => Steward) public stewards; // Mapping for stewards
-    mapping(uint256 => uint256) public pegValueVoteCounts; // Tracks the number of votes for each proposed value
-    mapping(address => bool) public hasVoted; // Tracks whether a steward has voted
-    mapping(address => uint256) public stewardVotes; // Tracks the current vote of each steward
-    uint256[] public proposedPegValues; // List of proposed peg values
-    mapping(string => Vote) public votes; // Track votes for parameters
-    mapping(address => mapping(string => VoteOption)) public stewardVotesAll; // Track steward votes for remaining values
 
     function setTcoinAddress(address _tcoinAddress) external onlyOwner {
         tcoin = TCOIN(_tcoinAddress);
@@ -72,20 +58,22 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         address _ttcAddress,
         address _cadAddress,
         address _charityAddress,
-        address _reserveTokensAddress
+        address _reserveTokensAddress,
+        address _votingAddress
     ) public initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         tcoin = TCOIN(_tcoinAddress);
         ttc = TTC(_ttcAddress);
         cad = CAD(_cadAddress);
+        voting = Voting(_votingAddress);
         charityAddress = _charityAddress;
         reserveTokensAddress = _reserveTokensAddress;
         pegValue = 330; // Representing $3.3 with 2 decimal places
         stewardCount = 0; // Total number of stewards
-        redemptionRateUserTTC = 95;
+        redemptionRateUserTTC = 92;
         redemptionRateStoreTTC = 95;
-        redemptionRateUserCAD = 90;
+        redemptionRateUserCAD = 87;
         redemptionRateStoreCAD = 90;
         minimumReserveRatio = 800000;
         maximumReserveRatio = 1200000;
@@ -95,10 +83,56 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
+    function getPegValue() external returns (uint256) {
+        return pegValue;
+    }
+
+    function getStewardCount() external returns (uint256) {
+        return stewardCount;
+    }
+
+    function getRedemptionRateUserTTC() external returns (uint256) {
+        return redemptionRateUserTTC;
+    }
+
+    function getRedemptionRateStoreTTC() external returns (uint256) {
+        return redemptionRateStoreTTC;
+    }
+
+    function getRedemptionRateUserCAD() external returns (uint256) {
+        return redemptionRateUserCAD;
+    }
+
+    function getRedemptionRateStoreCAD() external returns (uint256) {
+        return redemptionRateStoreCAD;
+    }
+
+    function getMinimumReserveRatio() external returns (uint256) {
+        return minimumReserveRatio;
+    }
+
+    function getMaximumReserveRatio() external returns (uint256) {
+        return maximumReserveRatio;
+    }
+
+    function getDemurrageRate() external returns (uint256) {
+        return redemptionRateUserCAD;
+    }
+
+    function getReserveRatio() external returns (uint256) {
+        return reserveRatio;
+    }
+
     // Function to add new charity with a name and address
     function addCharity(uint256 id, string memory name, address charity) external onlyOwner {
         charityNames[id] = name;
         charityAddresses[id] = charity;
+        isCharityAddress[charityAddress] = true;
+    }
+
+    // Function to check if an address is a charity
+    function isCharity(address _charity) external view returns (bool) {
+        return isCharityAddress[_charity];
     }
 
     // Function to nominate a steward by a charity
@@ -114,199 +148,8 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         stewardCount++;
     }
 
-    // Function to vote for updating the peg value
-    function voteToUpdatePegValue(uint256 proposedPegValue) external {
-        address steward = msg.sender;
-        require(isSteward(steward), "Only stewards can vote");
-
-        // Check if the steward has voted before and decrease the vote count for the previous value
-        if (hasVoted[steward]) {
-            uint256 previousVote = stewardVotes[steward];
-            pegValueVoteCounts[previousVote]--;
-        } else {
-            hasVoted[steward] = true;
-        }
-
-        // Update the steward's vote
-        stewardVotes[steward] = proposedPegValue;
-        pegValueVoteCounts[proposedPegValue]++;
-
-        // Check if the proposed value has the highest vote count
-        uint256 highestVoteCount = 0;
-        uint256 leadingPegValue = pegValue;
-
-        for (uint256 i = 0; i < proposedPegValues.length; i++) {
-            uint256 currentPegValue = proposedPegValues[i];
-            uint256 currentVoteCount = pegValueVoteCounts[currentPegValue];
-
-            if (currentVoteCount > highestVoteCount) {
-                highestVoteCount = currentVoteCount;
-                leadingPegValue = currentPegValue;
-            } else if (currentVoteCount == highestVoteCount && currentPegValue != leadingPegValue) {
-                // If there is a tie, do not update the peg value
-                leadingPegValue = pegValue;
-            }
-        }
-
-        // Update the peg value if there is a clear leader
-        if (leadingPegValue != pegValue) {
-            pegValue = leadingPegValue;
-        }
-    }
-
-    // Function to vote for multiple parameters
-    function voteToUpdateValues(
-        VoteOption voteOptionRedemptionRateUserTTC,
-        VoteOption voteOptionRedemptionRateStoreTTC,
-        VoteOption voteOptionRedemptionRateUserCAD,
-        VoteOption voteOptionRedemptionRateStoreCAD,
-        VoteOption voteOptionMinimumReserveRatio,
-        VoteOption voteOptionMaximumReserveRatio,
-        VoteOption voteOptionDemurrageRate,
-        VoteOption voteOptionReserveRatio
-    ) external {
-        address steward = msg.sender;
-        require(isSteward(steward), "Only stewards can vote");
-
-        // Check if the steward has voted before and decrement the vote count for the previous value
-        if (hasVoted[steward]) {
-            resetVotesForSteward(steward);
-        } else {
-            hasVoted[steward] = true;
-        }
-
-        // Update steward's votes
-        stewardVotesAll[steward]["redemptionRateUserTTC"] = voteOptionRedemptionRateUserTTC;
-        stewardVotesAll[steward]["redemptionRateStoreTTC"] = voteOptionRedemptionRateStoreTTC;
-        stewardVotesAll[steward]["redemptionRateUserCAD"] = voteOptionRedemptionRateUserCAD;
-        stewardVotesAll[steward]["redemptionRateStoreCAD"] = voteOptionRedemptionRateStoreCAD;
-        stewardVotesAll[steward]["minimumReserveRatio"] = voteOptionMinimumReserveRatio;
-        stewardVotesAll[steward]["maximumReserveRatio"] = voteOptionMaximumReserveRatio;
-        stewardVotesAll[steward]["demurrageRate"] = voteOptionDemurrageRate;
-        stewardVotesAll[steward]["reserveRatio"] = voteOptionReserveRatio;
-
-        // Process votes
-        processVote("redemptionRateUserTTC", voteOptionRedemptionRateUserTTC);
-        processVote("redemptionRateStoreTTC", voteOptionRedemptionRateStoreTTC);
-        processVote("redemptionRateUserCAD", voteOptionRedemptionRateUserCAD);
-        processVote("redemptionRateStoreCAD", voteOptionRedemptionRateStoreCAD);
-        processVote("minimumReserveRatio", voteOptionMinimumReserveRatio);
-        processVote("maximumReserveRatio", voteOptionMaximumReserveRatio);
-        processVote("demurrageRate", voteOptionDemurrageRate);
-        processVote("reserveRatio", voteOptionReserveRatio);
-
-        // Check and update values if necessary
-        checkAndUpdateValues("redemptionRateUserTTC");
-        checkAndUpdateValues("redemptionRateStoreTTC");
-        checkAndUpdateValues("redemptionRateUserCAD");
-        checkAndUpdateValues("redemptionRateStoreCAD");
-        checkAndUpdateValues("minimumReserveRatio");
-        checkAndUpdateValues("maximumReserveRatio");
-        checkAndUpdateValues("demurrageRate");
-        checkAndUpdateValues("reserveRatio");
-    }
-
-    function processVote(string memory valueName, VoteOption voteOption) internal {
-        if (voteOption == VoteOption.Increment) {
-            votes[valueName].incrementVotes++;
-        } else if (voteOption == VoteOption.Decrement) {
-            votes[valueName].decrementVotes++;
-        } else if (voteOption == VoteOption.Leave) {
-            votes[valueName].leaveVotes++;
-        }
-        votes[valueName].totalVotes++;
-    }
-
-    function checkAndUpdateValues(string memory valueName) internal {
-        if (votes[valueName].totalVotes * 2 >= stewardCount) { // 50% or more votes
-                VoteOption winningOption = getWinningOption(valueName);
-                updateValue(valueName, winningOption);
-            resetVotes(valueName);
-        }
-    }
-
-    function updateValue(string memory valueName, VoteOption winningOption) internal {
-        if (keccak256(abi.encodePacked(valueName)) == keccak256(abi.encodePacked("redemptionRateUserTTC"))) {
-            if (winningOption == VoteOption.Increment) {
-                redemptionRateUserTTC = redemptionRateUserTTC * 101 / 100; // Increment by 1%
-            } else if (winningOption == VoteOption.Decrement) {
-                redemptionRateUserTTC = redemptionRateUserTTC * 99 / 100; // Decrement by 1%
-            }
-        } else if (keccak256(abi.encodePacked(valueName)) == keccak256(abi.encodePacked("redemptionRateStoreTTC"))) {
-            if (winningOption == VoteOption.Increment) {
-                redemptionRateStoreTTC = redemptionRateStoreTTC * 101 / 100; // Increment by 1%
-            } else if (winningOption == VoteOption.Decrement) {
-                redemptionRateStoreTTC = redemptionRateStoreTTC * 99 / 100; // Decrement by 1%
-            }
-        } else if (keccak256(abi.encodePacked(valueName)) == keccak256(abi.encodePacked("redemptionRateUserCAD"))) {
-            if (winningOption == VoteOption.Increment) {
-                redemptionRateUserCAD = redemptionRateUserCAD * 101 / 100; // Increment by 1%
-            } else if (winningOption == VoteOption.Decrement) {
-                redemptionRateUserCAD = redemptionRateUserCAD * 99 / 100; // Decrement by 1%
-            }
-        } else if (keccak256(abi.encodePacked(valueName)) == keccak256(abi.encodePacked("redemptionRateStoreCAD"))) {
-            if (winningOption == VoteOption.Increment) {
-                redemptionRateStoreCAD = redemptionRateStoreCAD * 101 / 100; // Increment by 1%
-            } else if (winningOption == VoteOption.Decrement) {
-                redemptionRateStoreCAD = redemptionRateStoreCAD * 99 / 100; // Decrement by 1%
-            }
-        } else if (keccak256(abi.encodePacked(valueName)) == keccak256(abi.encodePacked("minimumReserveRatio"))) {
-            if (winningOption == VoteOption.Increment) {
-                minimumReserveRatio = minimumReserveRatio + 10000; // Increment by 0.01%
-            } else if (winningOption == VoteOption.Decrement) {
-                minimumReserveRatio = minimumReserveRatio - 10000; // Decrement by 0.01%
-            }
-        } else if (keccak256(abi.encodePacked(valueName)) == keccak256(abi.encodePacked("maximumReserveRatio"))) {
-            if (winningOption == VoteOption.Increment) {
-                maximumReserveRatio = maximumReserveRatio + 10000; // Increment by 0.01%
-            } else if (winningOption == VoteOption.Decrement) {
-                maximumReserveRatio = maximumReserveRatio - 10000; // Decrement by 0.01%
-            }
-        } else if (keccak256(abi.encodePacked(valueName)) == keccak256(abi.encodePacked("demurrageRate"))) {
-            if (winningOption == VoteOption.Increment) {
-                demurrageRate = demurrageRate + 1; // Increment by 1%
-            } else if (winningOption == VoteOption.Decrement) {
-                demurrageRate = demurrageRate - 1; // Decrement by 1%
-            }
-        } else if (keccak256(abi.encodePacked(valueName)) == keccak256(abi.encodePacked("reserveRatio"))) {
-            if (winningOption == VoteOption.Increment) {
-                reserveRatio = reserveRatio + 10000; // Increment by 0.01%
-            } else if (winningOption == VoteOption.Decrement) {
-                reserveRatio = reserveRatio - 10000; // Decrement by 0.01%
-            }
-        }
-    }
-
-    function resetVotes(string memory valueName) internal {
-        votes[valueName].incrementVotes = 0;
-        votes[valueName].decrementVotes = 0;
-        votes[valueName].leaveVotes = 0;
-        votes[valueName].totalVotes = 0;
-    }
-
-    function resetVotesForSteward(address steward) internal {
-        stewardVotesAll[steward]["redemptionRateUserTTC"] = VoteOption.Leave;
-        stewardVotesAll[steward]["redemptionRateStoreTTC"] = VoteOption.Leave;
-        stewardVotesAll[steward]["redemptionRateUserCAD"] = VoteOption.Leave;
-        stewardVotesAll[steward]["redemptionRateStoreCAD"] = VoteOption.Leave;
-        stewardVotesAll[steward]["minimumReserveRatio"] = VoteOption.Leave;
-        stewardVotesAll[steward]["maximumReserveRatio"] = VoteOption.Leave;
-        stewardVotesAll[steward]["demurrageRate"] = VoteOption.Leave;
-        stewardVotesAll[steward]["reserveRatio"] = VoteOption.Leave;
-    }
-
-    function getWinningOption(string memory valueName) internal view returns (VoteOption) {
-        if (votes[valueName].incrementVotes > votes[valueName].decrementVotes && votes[valueName].incrementVotes > votes[valueName].leaveVotes) {
-            return VoteOption.Increment;
-        } else if (votes[valueName].decrementVotes > votes[valueName].incrementVotes && votes[valueName].decrementVotes > votes[valueName].leaveVotes) {
-            return VoteOption.Decrement;
-        } else {
-            return VoteOption.Leave;
-        }
-    }
-
     // Function to check if an address is a steward
-    function isSteward(address addr) internal view returns (bool) {
+    function isSteward(address addr) external view returns (bool) {
         for (uint256 i = 0; i < stewardCount; i++) {
             if (stewards[i].stewardAddress == addr) {
                 return true;
