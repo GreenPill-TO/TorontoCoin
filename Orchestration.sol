@@ -16,16 +16,16 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     Voting public voting;
     address private charityAddress; // Address to send the excess amount over 1.2 reserve ratio and default charity address
     address private reserveTokensAddress; // Address to send tokens after user redeem their TCOIN's
-    uint256 public pegValue = voting.getPegValue(); // Representing $3.3 with 2 decimal places
+    uint256 public pegValue; // Representing $3.3 with 2 decimal places
     uint256 public stewardCount; // Total number of stewards
-    uint256 public redemptionRateUserTTC = voting.getRedemptionRateUserTTC();
-    uint256 public redemptionRateStoreTTC = voting.getRedemptionRateStoreTTC();
-    uint256 public redemptionRateUserCAD = voting.getRedemptionRateUserCAD();
-    uint256 public redemptionRateStoreCAD = voting.getRedemptionRateStoreCAD();
-    uint256 public minimumReserveRatio = voting.getMinimumReserveRatio();
-    uint256 public maximumReserveRatio = voting.getMaximumReserveRatio();
-    uint256 public demurrageRate = voting.getDemurrageRate();
-    uint256 public reserveRatio = voting.getReserveRatio();
+    uint256 public redemptionRateUserTTC;
+    uint256 public redemptionRateStoreTTC;
+    uint256 public redemptionRateUserCAD;
+    uint256 public redemptionRateStoreCAD;
+    uint256 public minimumReserveRatio;
+    uint256 public maximumReserveRatio;
+    uint256 public demurrageRate;
+    uint256 public reserveRatio;
 
     // Mappings for charity names and addresses
     mapping(uint256 => string) public charityNames;
@@ -36,6 +36,18 @@ contract Orchestrator is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function setTcoinAddress(address _tcoinAddress) external onlyOwner {
         tcoin = TCOIN(_tcoinAddress);
+    }
+
+    function updateValuesAfterVoting() external {
+    pegValue = voting.getPegValue(); 
+    redemptionRateUserTTC = voting.getRedemptionRateUserTTC();
+    redemptionRateStoreTTC = voting.getRedemptionRateStoreTTC();
+    redemptionRateUserCAD = voting.getRedemptionRateUserCAD();
+    redemptionRateStoreCAD = voting.getRedemptionRateStoreCAD();
+    minimumReserveRatio = voting.getMinimumReserveRatio();
+    maximumReserveRatio = voting.getMaximumReserveRatio();
+    demurrageRate = voting.getDemurrageRate();
+    reserveRatio = voting.getReserveRatio();
     }
 
     function setTtcAddress(address _ttcAddress) external onlyOwner {
