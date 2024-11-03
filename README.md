@@ -5,10 +5,10 @@ A new local community token for Toronto: An asset-backed circular economy token 
 TorontoCoin (TTC) aims to create a sustainable and inclusive economic system for the Toronto community. This token is designed to promote local commerce, support charitable initiatives, and maintain stable value through asset backing and demurrage mechanisms.
 
 ## Key Features
-- Asset-Backed: TTC is backed by real-world assets to maintain value.
-- Circular Economy: Encourages spending within the community to boost local businesses.
-- Demurrage: A small fee on holding TTC to incentivize spending and circulation.
-- Charity Component: A portion of transaction fees is allocated to local charities.
+- **Asset-Backed:** TTC is backed by real-world assets to maintain value.
+- **Circular Economy:** Encourages spending within the community to boost local businesses.
+- **Demurrage:** A small fee on holding TTC to incentivize spending and circulation.
+- **Charity Component:** A portion of transaction fees is allocated to local charities.
 
 ## Read these for more details: 
 - Whitepaper: https://github.com/GreenPill-TO/TorontoCoin/blob/main/T-Coin%20Whitepaper.pdf
